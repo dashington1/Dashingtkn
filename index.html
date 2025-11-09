@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dashington</title>
+</head>
+<body>
+  <h1><!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MiniInst - single file</title>
+  <meta name="description" content="Mini društvena mreža - single file PWA-ready" />
+  <style>
+    /* ----------------- styles (inline) ----------------- */
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    body{margin:0;background:#f2f4f7;color:#111;-webkit-font-smoothing:antialiased}
+    header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    h1{margin:0;font-size:20px}
+    main{max-width:720px;margin:16px auto;padding:0 12px}
+    .card{background:#fff;padding:12px;border-radius:8px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+    input[type="text"],input[type="email"],input[type="password"]{width:100%;padding:8px;margin:8px 0;border-radius:6px;border:1px solid #e0e0e0}
+    button{padding:8px 12px;border-radius:6px;border:none;background:#0a84ff;color:#fff;cursor:pointer}
+    button.secondary{background:#e0e0e0;color:#111}
+    .row{display:flex;gap:8px}
+    #feed{display:flex;flex-direction:column;gap:12px}
+    .post{overflow:hidden}
+    .post-header{display:flex;gap:8px;align-items:center}
+    .avatar{width:40px;height:40px;border-radius:50%;background:#ddd;flex:0 0 40px}
+    .post-image-wrap{margin-top:8px}
+    .post-image{width:100%;height:auto;border-radius:6px}
+    .post-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .comments{margin-top:8px;border-top:1px dashed #eee;padding-top:8px}
+    .comments-list .comment{padding:6px 0;border-bottom:1px solid #f4f4f4}
+    .small{font-size:12px;color:#666}
+    #user-area{display:flex;gap:8px;align-items:center}
+    .hidden{display:none}
+    .muted{color:#666;font-size:13px}
+    .file-info{font-size:13px;color:#666;margin-top:6px}
+    .owner-email{display:block}
+    .post-card{position:relative}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MiniInst</h1>
+    <div id="user-area">
+      <span id="user-email" class="muted"></span>
+      <button id="logout-btn" class="hidden">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- AUTH -->
+    <section id="auth-section" class="card">
+      <h2>Prijava / Registracija</h2>
+      <input id="email" type="email" placeholder="Email" />
+      <input id="password" type="password" placeholder="Lozinka" />
+      <div class="row">
+        <button id="login-btn">Prijavi se</button>
+        <button id="signup-btn" class="secondary">Registruj se</button>
+      </div>
+      <p class="muted">Napomena: Koristi validan email. Lozinka mora biti minimum 6 karaktera (pravila Firebase-a).</p>
+    </section>
+
+    <!-- APP -->
+    <section id="app-section" class="hidden">
+      <div class="card">
+        <h2>Napravi post</h2>
+        <input id="post-text" type="text" placeholder="Šta se dešava?" />
+        <input id="post-image" type="file" accept="image/*" />
+        <div class="file-info" id="file-info"></div>
+        <div style="margin-top:8px">
+          <button id="create-post-btn">Objavi</button>
+        </div>
+      </div>
+
+      <div id="feed"></div>
+    </section>
+  </main>
+
+  <!-- Template -->
+  <template id="post-template">
+    <article class="post card post-card">
+      <div class="post-header">
+        <div class="avatar"></div>
+        <div style="flex:1">
+          <strong class="owner-email"></strong>
+          <div class="small post-time"></div>
+        </div>
+      </div>
+      <div class="post-image-wrap">
+        <img class="post-image" src="" alt="post image" />
+      </div>
+      <div class="post-body">
+        <p class="post-text"></p>
+        <div class="post-actions">
+          <button class="like-btn">Like</button>
+          <span class="likes-count">0</span>
+          <button class="show-comments-btn secondary">Komentari</button>
+        </div>
+        <div class="comments hidden">
+          <div class="comments-list"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input class="comment-input" placeholder="Dodaj komentar..." style="flex:1;padding:8px;border-radius:6px;border:1px solid #e0e0e0" />
+            <button class="comment-send-btn">Pošalji</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <!-- Firebase SDKs (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
+  <script>
+    /***** 1) Paste your Firebase config here *****/
+    const firebaseConfig = /* YOUR FIREBASE CONFIG HERE */;
+    /**********************************************/
+
+    // init
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    // elements
+    const authSection = document.getElementById('auth-section');
+    const appSection = document.getElementById('app-section');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const loginBtn = document.getElementById('login-btn');
+    const signupBtn = document.getElementById('signup-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const userEmailSpan = document.getElementById('user-email');
+
+    const createPostBtn = document.getElementById('create-post-btn');
+    const postTextInput = document.getElementById('post-text');
+    const postImageInput = document.getElementById('post-image');
+    const fileInfo = document.getElementById('file-info');
+
+    const feedEl = document.getElementById('feed');
+    const postTemplate = document.getElementById('post-template');
+
+    // show file info
+    postImageInput.addEventListener('change', () => {
+      const f = postImageInput.files[0];
+      fileInfo.textContent = f ? `${f.name} — ${(f.size/1024|0)} KB` : '';
+    });
+
+    // AUTH actions
+    signupBtn.addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      const pass = passwordInput.value;
+      if (!email || !pass) return alert('Popuni email i lozinku');
+      try {
+        const userCred = await auth.createUserWithEmailAndPassword(email, pass);
+        // create profile doc
+        await db.collection('users').doc(userCred.user.uid).set({
+          email: email,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (err) {
+        alert('Greška: ' + err.message);
+      }
+    });
+
+    loginBtn.addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      const pass = passwordInput.value;
+      if (!email || !pass) return alert('Popuni email i lozinku');
+      try {
+        await auth.signInWithEmailAndPassword(email, pass);
+      } catch (err) {
+        alert('Greška: ' + err.message);
+      }
+    });
+
+    logoutBtn.addEventListener('click', () => auth.signOut());
+
+    // feed listener detach handle
+    let detachFeedListener = null;
+
+    // auth state
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        authSection.classList.add('hidden');
+        appSection.classList.remove('hidden');
+        logoutBtn.classList.remove('hidden');
+        userEmailSpan.textContent = user.email;
+        startFeedListener();
+      } else {
+        authSection.classList.remove('hidden');
+        appSection.classList.add('hidden');
+        logoutBtn.classList.add('hidden');
+        userEmailSpan.textContent = '';
+        feedEl.innerHTML = '';
+        if (detachFeedListener) { detachFeedListener(); detachFeedListener = null; }
+      }
+    });
+
+    // CREATE POST
+    createPostBtn.addEventListener('click', async () => {
+      const user = auth.currentUser;
+      if (!user) return alert("Moraš biti prijavljen.");
+      const text = postTextInput.value.trim();
+      const file = postImageInput.files[0];
+      if (!text && !file) return alert("Napiši nešto ili dodaj sliku!");
+
+      try {
+        // show simple uploading feedback
+        createPostBtn.disabled = true;
+        createPostBtn.textContent = 'Objavljujem...';
+
+        let imageUrl = '';
+        if (file) {
+          const path = `posts/${user.uid}/${Date.now()}-${file.name}`;
+          const ref = storage.ref().child(path);
+          const snapshot = await ref.put(file);
+          imageUrl = await snapshot.ref.getDownloadURL();
+        }
+
+        await db.collection('posts').add({
+          owner: user.uid,
+          email: user.email,
+          text: text,
+          image: imageUrl,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          likes: [], // array of uid
+        });
+
+        postTextInput.value = '';
+        postImageInput.value = '';
+        fileInfo.textContent = '';
+      } catch (err) {
+        alert('Greška pri objavljivanju: ' + err.message);
+      } finally {
+        createPostBtn.disabled = false;
+        createPostBtn.textContent = 'Objavi';
+      }
+    });
+
+    // START FEED LISTENER
+    function startFeedListener() {
+      if (detachFeedListener) detachFeedListener();
+      detachFeedListener = db.collection('posts')
+        .orderBy('createdAt', 'desc')
+        .onSnapshot(snapshot => {
+          // clear and render in order
+          feedEl.innerHTML = '';
+          snapshot.forEach(doc => renderPost(doc));
+        }, err => {
+          console.error('feed error', err);
+        });
+    }
+
+    // RENDER POST
+    function renderPost(doc) {
+      const data = doc.data();
+      const postId = doc.id;
+      const node = postTemplate.content.cloneNode(true);
+      const root = node.querySelector('.post-card');
+      const img = node.querySelector('.post-image');
+      const txt = node.querySelector('.post-text');
+      const ownerEl = node.querySelector('.owner-email');
+      const timeEl = node.querySelector('.post-time');
+      const likeBtn = node.querySelector('.like-btn');
+      const likesCount = node.querySelector('.likes-count');
+      const commentsWrap = node.querySelector('.comments');
+      const showCommentsBtn = node.querySelector('.show-comments-btn');
+      const commentsList = node.querySelector('.comments-list');
+      const commentInput = node.querySelector('.comment-input');
+      const commentSendBtn = node.querySelector('.comment-send-btn');
+
+      ownerEl.textContent = data.email || 'Nepoznat';
+      txt.textContent = data.text || '';
+      timeEl.textContent = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : '';
+      if (data.image) {
+        img.src = data.image;
+        img.style.display = '';
+      } else {
+        img.style.display = 'none';
+      }
+
+      const user = auth.currentUser;
+      const liked = user && data.likes && data.likes.includes(user.uid);
+      likesCount.textContent = (data.likes && data.likes.length) || 0;
+      likeBtn.textContent = liked ? 'Unlike' : 'Like';
+
+      // LIKE button
+      likeBtn.addEventListener('click', async () => {
+        const u = auth.currentUser;
+        if (!u) return alert('Moraš biti prijavljen da lajk-uješ.');
+        const ref = db.collection('posts').doc(postId);
+        try {
+          await db.runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            const post = snap.data();
+            let likes = post.likes || [];
+            if (likes.includes(u.uid)) likes = likes.filter(id => id !== u.uid);
+            else likes.push(u.uid);
+            tx.update(ref, { likes });
+          });
+        } catch (err) {
+          console.error('like err', err);
+        }
+      });
+
+      // COMMENTS: show/hide & load
+      let detachComments = null;
+      showCommentsBtn.addEventListener('click', () => {
+        const shown = !commentsWrap.classList.contains('hidden');
+        if (shown) {
+          commentsWrap.classList.add('hidden');
+          showCommentsBtn.textContent = 'Komentari';
+          if (detachComments) { detachComments(); detachComments = null; }
+        } else {
+          commentsWrap.classList.remove('hidden');
+          showCommentsBtn.textContent = 'Sakrij';
+          // load comments realtime
+          const commentsRef = db.collection('posts').doc(postId).collection('comments').orderBy('createdAt','asc');
+          detachComments = commentsRef.onSnapshot(snap => {
+            commentsList.innerHTML = '';
+            snap.forEach(cdoc => {
+              const c = cdoc.data();
+              const div = document.createElement('div');
+              div.className = 'comment';
+              div.innerHTML = `<strong>${escapeHtml(c.email)}</strong> <span class="small muted">${c.createdAt ? new Date(c.createdAt.toDate()).toLocaleString() : ''}</span><div>${escapeHtml(c.text)}</div>`;
+              commentsList.appendChild(div);
+            });
+          });
+        }
+      });
+
+      // SEND COMMENT
+      commentSendBtn.addEventListener('click', async () => {
+        const u = auth.currentUser;
+        if (!u) return alert('Moraš biti prijavljen da komentarišeš.');
+        const text = commentInput.value.trim();
+        if (!text) return;
+        try {
+          await db.collection('posts').doc(postId).collection('comments').add({
+            uid: u.uid,
+            email: u.email,
+            text: text,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          commentInput.value = '';
+        } catch (err) {
+          console.error('comment err', err);
+        }
+      });
+
+      // append rendered node
+      feedEl.appendChild(node);
+    }
+
+    // basic escape for innerHTML used for comments
+    function escapeHtml(s){
+      if(!s) return '';
+      return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+    }
+
+    // initial - try to keep user logged in automatically handled by Firebase
+  </script>
+</body>
+</html></h1>
+</body>
+</html>
